@@ -1,0 +1,592 @@
+
+task.spawn(function()
+    local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local localPlayer = Players.LocalPlayer
+
+if not localPlayer.Character then
+    localPlayer.CharacterAdded:Wait()
+end
+task.wait(0.5)
+
+-- hi
+local function findRemoteExact()
+    local Packages = ReplicatedStorage:WaitForChild("Packages", 5)
+    if Packages then
+        local Net = Packages:WaitForChild("Net", 5)
+        if Net then
+            local remote = Net:FindFirstChild("RE/352aad5B-c786-4998-886b-3e4fa390721e")
+            if remote and remote:IsA("RemoteEvent") then return remote end
+            for _, obj in pairs(Net:GetChildren()) do
+                if obj:IsA("RemoteEvent") and obj.Name:lower() == "re/352aad5b-c786-4998-886b-3e4fa390721e" then
+                    return obj
+                end
+            end
+        end
+    end
+    for _, obj in pairs(game:GetDescendants()) do
+        if obj:IsA("RemoteEvent") and obj.Name:lower():find("352aad5") then
+            return obj
+        end
+    end
+    return nil
+end
+
+local NetRemote
+local remoteReady = false
+
+task.spawn(function()
+    local maxWait = 10
+    local elapsed = 0
+    
+    while elapsed < maxWait and not remoteReady do
+        NetRemote = findRemoteExact()
+        
+        if NetRemote and NetRemote:IsA("RemoteEvent") then
+            remoteReady = true
+            warn("âœ… Admin remote found!")
+            break
+        end
+        
+        elapsed = elapsed + 0.1
+        task.wait(0.1)
+    end
+    
+    if not remoteReady then
+        warn("âŒ Admin remote not found after " .. maxWait .. " seconds")
+    end
+end)
+
+-- Anti-TP Scam detection variables
+local antiTPScamEnabled = false
+local antiTPLastDefenseTime = 0
+local antiTPCooldown = 3
+local antiTPDistanceThreshold = 15 -- Distance in studs to trigger anti-TP
+
+-- My plot information
+local myPlot = nil
+local myPlotAnimalPodiums = {}
+local myDisplayName = localPlayer.DisplayName
+
+-- Function to find my plot by scanning all plots for my display name
+local function findMyPlot()
+    local plotsFolder = Workspace:FindFirstChild("Plots")
+    if not plotsFolder then
+        warn("âŒ Plots folder not found in Workspace!")
+        return nil
+    end
+    
+    for _, plot in pairs(plotsFolder:GetChildren()) do
+        local plotSign = plot:FindFirstChild("PlotSign")
+        if plotSign then
+            local surfaceGui = plotSign:FindFirstChild("SurfaceGui")
+            if surfaceGui then
+                local frame = surfaceGui:FindFirstChild("Frame")
+                if frame then
+                    local textLabel = frame:FindFirstChild("TextLabel")
+                    if textLabel and textLabel:IsA("TextLabel") then
+                        local plotText = textLabel.Text
+                        -- Check if this plot belongs to me (contains my display name)
+                        if plotText:find(myDisplayName) and plotText:find("'s Base") then
+                            return plot
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    warn("âŒ Could not find plot belonging to: " .. myDisplayName)
+    return nil
+end
+
+-- Function to get AnimalPodiums positions from my plot
+local function getMyPlotAnimalPodiums(plot)
+    local podiumPositions = {}
+    
+    local animalPodiumsFolder = plot:FindFirstChild("AnimalPodiums")
+    if not animalPodiumsFolder then
+        warn("âŒ AnimalPodiums folder not found in plot: " .. plot.Name)
+        return podiumPositions
+    end
+    
+    -- Look for Models named 1 through 10
+    for i = 1, 10 do
+        local podium = animalPodiumsFolder:FindFirstChild(tostring(i))
+        if podium and podium:IsA("Model") then
+            -- Get the position of the Model itself
+            podiumPositions[i] = podium:GetPivot().Position
+        end
+    end
+    
+    local count = 0
+    for _ in pairs(podiumPositions) do count = count + 1 end
+    
+    if count == 0 then
+        warn("âš ï¸ No AnimalPodiums found in plot: " .. plot.Name)
+    else
+    
+    end
+    
+    return podiumPositions
+end
+
+-- Stealing detection variables
+local stealRemote
+local stealingDetected = false
+
+-- Auto-Defense variables
+local autoDefenseEnabled = false
+local lastDefenseTime = 0
+local defenseCooldown = 3
+
+-- Player selection variables
+local selectedPlayers = {}
+local selectedSet = {}
+local selectedUserIds = {}
+
+-- Function to get player's head
+local function getPlayerHead(plr)
+    local char = plr.Character
+    if not char then return nil end
+    return char:FindFirstChild("Head")
+end
+
+-- Function to get player's HumanoidRootPart
+local function getPlayerRootPart(plr)
+    local char = plr.Character
+    if not char then return nil end
+    return char:FindFirstChild("HumanoidRootPart")
+end
+
+-- Function to find closest player to position
+local function findClosestPlayerToPosition(position)
+    local closestPlayer
+    local closestDist = math.huge
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= localPlayer then
+            local head = getPlayerHead(plr)
+            if head then
+                local dist = (head.Position - position).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
+                    closestPlayer = plr
+                end
+            end
+        end
+    end
+
+    return closestPlayer
+end
+
+-- Setup stealing detection
+task.spawn(function()
+    local function locateStealRemote()
+        local packages = ReplicatedStorage:FindFirstChild("Packages")
+        if not packages then return nil end
+        
+        local net = packages:FindFirstChild("Net")
+        if not net then return nil end
+        
+        return net:FindFirstChild("RE/NotificationService/Notify")
+    end
+    
+    local maxAttempts = 10
+    for i = 1, maxAttempts do
+        stealRemote = locateStealRemote()
+        if stealRemote then
+            break
+        end
+        task.wait(0.5)
+    end
+    
+    if stealRemote then
+        stealRemote.OnClientEvent:Connect(function(msg)
+            if typeof(msg) ~= "string" then return end
+            if not msg:find("Someone is stealing your") then return end
+
+            local myChar = localPlayer.Character
+            if not myChar then return end
+
+            local myHead = myChar:FindFirstChild("Head")
+            if not myHead then return end
+
+            local stealer = findClosestPlayerToPosition(myHead.Position)
+            if stealer then
+                print("STEALER DETECTED:", stealer.Name, stealer.DisplayName)
+                stealingDetected = true
+            end
+        end)
+    end
+end)
+
+-- Find and setup my plot at startup
+task.spawn(function()
+    task.wait(2) -- Wait a bit for game to load
+    myPlot = findMyPlot()
+    if myPlot then
+        myPlotAnimalPodiums = getMyPlotAnimalPodiums(myPlot)
+        
+    else
+        
+    end
+end)
+
+-- Anti-TP Scam monitoring
+task.spawn(function()
+    while true do
+        if antiTPScamEnabled and remoteReady and myPlot and #myPlotAnimalPodiums > 0 then
+            -- Check all players
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= localPlayer and plr.Character then
+                    local targetRoot = getPlayerRootPart(plr)
+                    if targetRoot then
+                        local playerPos = targetRoot.Position
+                        
+                        -- Check distance to each AnimalPodium in my plot
+                        for podiumNumber, podiumPos in pairs(myPlotAnimalPodiums) do
+                            local distance = (playerPos - podiumPos).Magnitude
+                            if distance < antiTPDistanceThreshold then
+                                if (tick() - antiTPLastDefenseTime) > antiTPCooldown then
+                                    
+                                    -- Execute commands on the player who got too close
+                                    for _, cmd in ipairs({"balloon", "inverse", "rocket", "tiny"}) do
+                                        NetRemote:FireServer("78a772b6-9e1c-4827-ab8b-04a07838f298", plr, cmd)
+                                        task.wait(0.05)
+                                    end
+                                    
+                                    antiTPLastDefenseTime = tick()
+                                    break -- Only target one player at a time
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- Auto-Defense monitoring
+task.spawn(function()
+    while true do
+        if autoDefenseEnabled and #selectedPlayers > 0 and stealingDetected and remoteReady then
+            stealingDetected = false
+            
+            if (tick() - lastDefenseTime) > defenseCooldown then
+                local validPlayers = {}
+                for _, plr in ipairs(selectedPlayers) do
+                    if plr and plr.Parent == Players then
+                        table.insert(validPlayers, plr)
+                    end
+                end
+                
+                if #validPlayers > 0 then
+                    if #validPlayers == 1 then
+                        for _, cmd in ipairs({"balloon", "inverse", "rocket", "tiny"}) do
+                            NetRemote:FireServer("78a772b6-9e1c-4827-ab8b-04a07838f298", validPlayers[1], cmd)
+                        end
+                        print("ðŸ›¡ï¸ Auto-Defense: Protected from " .. validPlayers[1].Name)
+                    elseif #validPlayers >= 2 then
+                        local p1, p2 = validPlayers[1], validPlayers[2]
+                        
+                        for _, cmd in ipairs({"balloon", "inverse", "rocket", "tiny"}) do
+                            NetRemote:FireServer("78a772b6-9e1c-4827-ab8b-04a07838f298", p1, cmd)
+                            task.wait(0.05)
+                        end
+                        
+                        for _, cmd in ipairs({"ragdoll", "jail", "jumpscare", "morph"}) do
+                            NetRemote:FireServer("78a772b6-9e1c-4827-ab8b-04a07838f298", p2, cmd)
+                            task.wait(0.05)
+                        end
+                        
+                        print("ðŸ›¡ï¸ Auto-Defense: Protected from " .. p1.Name .. " and " .. p2.Name)
+                    end
+                    
+                    lastDefenseTime = tick()
+                end
+            end
+        end
+        
+        task.wait(0.05)
+    end
+end)
+
+-- UI Creation
+local activeGradients = {}
+local function registerGradient(gradient)
+    table.insert(activeGradients, gradient)
+end
+
+local animationAngle = 0
+RunService.Heartbeat:Connect(function(dt)
+    animationAngle = (animationAngle + (dt * 180)) % 360
+    for i = #activeGradients, 1, -1 do
+        local grad = activeGradients[i]
+        if grad and grad.Parent then
+            grad.Rotation = animationAngle
+        else
+            table.remove(activeGradients, i)
+        end
+    end
+end)
+
+local function addAnimatedStroke(frame, thickness)
+    local stroke = Instance.new("UIStroke")
+    stroke.Name = "AnimatedStroke"
+    stroke.Color = Color3.fromRGB(255, 255, 255)
+    stroke.Thickness = thickness or 3
+    stroke.Transparency = 0
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = frame
+
+    local gradient = Instance.new("UIGradient")
+    gradient.Parent = stroke
+    gradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0),
+        NumberSequenceKeypoint.new(0.5, 0.8),
+        NumberSequenceKeypoint.new(1, 0)
+    })
+    
+    registerGradient(gradient)
+    return stroke
+end
+
+-- Create GUI
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AdminCardGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+-- Main Card
+local outer = Instance.new("Frame")
+outer.Name = "Outer"
+outer.Size = UDim2.new(0, 240, 0, 270) -- Increased height for new toggle
+outer.Position = UDim2.new(1, -260, 0, 80)
+outer.BackgroundTransparency = 1
+outer.Parent = screenGui
+
+local outerCorner = Instance.new("UICorner")
+outerCorner.CornerRadius = UDim.new(0, 12)
+outerCorner.Parent = outer
+
+local card = Instance.new("Frame")
+card.Name = "Card"
+card.Size = UDim2.new(1, -12, 1, -12)
+card.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+card.BackgroundTransparency = 0.1
+card.BorderSizePixel = 0
+card.Parent = outer
+
+local cardCorner = Instance.new("UICorner")
+cardCorner.CornerRadius = UDim.new(0, 12)
+cardCorner.Parent = card
+
+local cardStroke = addAnimatedStroke(card, 3)
+
+-- Top Section
+local topLeftAccent = Instance.new("Frame")
+topLeftAccent.Name = "TopLeftAccent"
+topLeftAccent.Size = UDim2.new(1, 0, 0, 60)
+topLeftAccent.BackgroundColor3 = Color3.fromRGB(40, 40, 48)
+topLeftAccent.BackgroundTransparency = 0.1
+topLeftAccent.BorderSizePixel = 0
+topLeftAccent.Parent = card
+
+local topLeftAccentCorner = Instance.new("UICorner")
+topLeftAccentCorner.CornerRadius = UDim.new(0, 12)
+topLeftAccentCorner.Parent = topLeftAccent
+
+local titleStroke = addAnimatedStroke(topLeftAccent, 2)
+
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.Parent = topLeftAccent
+title.BackgroundTransparency = 1
+title.Position = UDim2.new(0, 18, 0, 8)
+title.Size = UDim2.new(1, -36, 0, 26)
+title.Text = "chiraq Hub"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextXAlignment = Enum.TextXAlignment.Left
+
+local subtitle = Instance.new("TextLabel")
+subtitle.Name = "Subtitle"
+subtitle.Parent = topLeftAccent
+subtitle.BackgroundTransparency = 1
+subtitle.Position = UDim2.new(0, 18, 0, 30)
+subtitle.Size = UDim2.new(1, -36, 0, 18)
+subtitle.Text = "Select players below"
+subtitle.Font = Enum.Font.Gotham
+subtitle.TextSize = 11
+subtitle.TextColor3 = Color3.fromRGB(160, 160, 160)
+subtitle.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Plot status label
+local plotStatus = Instance.new("TextLabel")
+plotStatus.Name = "PlotStatus"
+plotStatus.Parent = topLeftAccent
+plotStatus.BackgroundTransparency = 1
+plotStatus.Position = UDim2.new(0, 18, 0, 48)
+plotStatus.Size = UDim2.new(1, -36, 0, 8)
+plotStatus.Text = ""
+plotStatus.Font = Enum.Font.Gotham
+plotStatus.TextSize = 9
+plotStatus.TextColor3 = Color3.fromRGB(180, 180, 180)
+plotStatus.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Auto-Defense Toggle
+local toggleFrame = Instance.new("Frame")
+toggleFrame.Name = "ToggleFrame"
+toggleFrame.Size = UDim2.new(1, -24, 0, 32)
+toggleFrame.Position = UDim2.new(0, 12, 0, 72)
+toggleFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+toggleFrame.BackgroundTransparency = 0.1
+toggleFrame.BorderSizePixel = 0
+toggleFrame.Parent = card
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 8)
+toggleCorner.Parent = toggleFrame
+
+local toggleLabel = Instance.new("TextLabel")
+toggleLabel.Name = "ToggleLabel"
+toggleLabel.Parent = toggleFrame
+toggleLabel.BackgroundTransparency = 1
+toggleLabel.Position = UDim2.new(0, 12, 0, 0)
+toggleLabel.Size = UDim2.new(1, -60, 1, 0)
+toggleLabel.Text = "Auto-Defense"
+toggleLabel.Font = Enum.Font.GothamBold
+toggleLabel.TextSize = 13
+toggleLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Name = "ToggleButton"
+toggleButton.Parent = toggleFrame
+toggleButton.Size = UDim2.new(0, 50, 0, 24)
+toggleButton.Position = UDim2.new(1, -58, 0.5, -12)
+toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 68)
+toggleButton.Text = ""
+toggleButton.BorderSizePixel = 0
+
+local toggleBtnCorner = Instance.new("UICorner")
+toggleBtnCorner.CornerRadius = UDim.new(0, 12)
+toggleBtnCorner.Parent = toggleButton
+
+local toggleIndicator = Instance.new("Frame")
+toggleIndicator.Name = "Indicator"
+toggleIndicator.Parent = toggleButton
+toggleIndicator.Size = UDim2.new(0, 20, 0, 20)
+toggleIndicator.Position = UDim2.new(0, 2, 0, 2)
+toggleIndicator.BackgroundColor3 = Color3.fromRGB(180, 180, 180)
+toggleIndicator.BorderSizePixel = 0
+
+local indicatorCorner = Instance.new("UICorner")
+indicatorCorner.CornerRadius = UDim.new(0, 10)
+indicatorCorner.Parent = toggleIndicator
+
+-- Anti-TP Scam Toggle
+local antiTPToggleFrame = Instance.new("Frame")
+antiTPToggleFrame.Name = "AntiTPToggleFrame"
+antiTPToggleFrame.Size = UDim2.new(1, -24, 0, 32)
+antiTPToggleFrame.Position = UDim2.new(0, 12, 0, 114)
+antiTPToggleFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+antiTPToggleFrame.BackgroundTransparency = 0.1
+antiTPToggleFrame.BorderSizePixel = 0
+antiTPToggleFrame.Parent = card
+
+local antiTPToggleCorner = Instance.new("UICorner")
+antiTPToggleCorner.CornerRadius = UDim.new(0, 8)
+antiTPToggleCorner.Parent = antiTPToggleFrame
+
+local antiTPToggleLabel = Instance.new("TextLabel")
+antiTPToggleLabel.Name = "AntiTPToggleLabel"
+antiTPToggleLabel.Parent = antiTPToggleFrame
+antiTPToggleLabel.BackgroundTransparency = 1
+antiTPToggleLabel.Position = UDim2.new(0, 12, 0, 0)
+antiTPToggleLabel.Size = UDim2.new(1, -60, 1, 0)
+antiTPToggleLabel.Text = "Anti-TP Scam"
+antiTPToggleLabel.Font = Enum.Font.GothamBold
+antiTPToggleLabel.TextSize = 13
+antiTPToggleLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+antiTPToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local antiTPToggleButton = Instance.new("TextButton")
+antiTPToggleButton.Name = "AntiTPToggleButton"
+antiTPToggleButton.Parent = antiTPToggleFrame
+antiTPToggleButton.Size = UDim2.new(0, 50, 0, 24)
+antiTPToggleButton.Position = UDim2.new(1, -58, 0.5, -12)
+antiTPToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 68)
+antiTPToggleButton.Text = ""
+antiTPToggleButton.BorderSizePixel = 0
+
+local antiTPToggleBtnCorner = Instance.new("UICorner")
+antiTPToggleBtnCorner.CornerRadius = UDim.new(0, 12)
+antiTPToggleBtnCorner.Parent = antiTPToggleButton
+
+local antiTPToggleIndicator = Instance.new("Frame")
+antiTPToggleIndicator.Name = "Indicator"
+antiTPToggleIndicator.Parent = antiTPToggleButton
+antiTPToggleIndicator.Size = UDim2.new(0, 20, 0, 20)
+antiTPToggleIndicator.Position = UDim2.new(0, 2, 0, 2)
+antiTPToggleIndicator.BackgroundColor3 = Color3.fromRGB(180, 180, 180)
+antiTPToggleIndicator.BorderSizePixel = 0
+
+local antiTPIndicatorCorner = Instance.new("UICorner")
+antiTPIndicatorCorner.CornerRadius = UDim.new(0, 10)
+antiTPIndicatorCorner.Parent = antiTPToggleIndicator
+
+-- Player List
+local body = Instance.new("Frame")
+body.Name = "Body"
+body.Size = UDim2.new(1, -24, 1, -160) -- Adjusted for new toggle and execute button
+body.Position = UDim2.new(0, 12, 0, 156) -- Adjusted position
+body.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+body.BackgroundTransparency = 0.1
+body.BorderSizePixel = 0
+body.Parent = card
+
+local bodyCorner = Instance.new("UICorner")
+bodyCorner.CornerRadius = UDim.new(0, 12)
+bodyCorner.Parent = body
+
+local list = Instance.new("ScrollingFrame")
+list.Name = "PlayersList"
+list.Parent = body
+list.BackgroundTransparency = 1
+list.Size = UDim2.new(1, -16, 1, -16)
+list.Position = UDim2.new(0, 8, 0, 8)
+list.CanvasSize = UDim2.new(0, 0, 0, 0)
+list.ScrollBarThickness = 6
+
+local layout = Instance.new("UIListLayout")
+layout.Parent = list
+layout.Padding = UDim.new(0, 8)
+layout.SortOrder = Enum.SortOrder.Name
+
+-- Player Row Template
+local template = Instance.new("Frame")
+template.Name = "TemplateRow"
+template.Size = UDim2.new(1, 0, 0, 40)
+template.BackgroundColor3 = Color3.fromRGB(40, 40, 48)
+template.Visible = false
+template.Parent = list
+
+local templateCorner = Instance.new("UICorner")
+templateCorner.CornerRadius = UDim.new(0, 8)
+templateCorner.Parent = template
+
+local templateStroke = Instance.new("UIStroke")
+templateStroke.Color = Color3.fromRGB(60, 60, 68)
+templateStroke.Thickness = 1
+templateStroke.Parent = tem
